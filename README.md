@@ -1,116 +1,110 @@
-# AI Job Application Agent — Starter
+# AI Job Application Agent
 
-A local-first, dry-run starter for a personal job application assistant. It provides FastAPI, MongoDB, Redis/Celery, a React + TypeScript + Vite dashboard, connector interfaces, and tests.
+[![CI](https://github.com/OWNER/job-application-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/job-application-agent/actions/workflows/ci.yml)
 
-## Safety and integration status
+A personal, local-first assistant that discovers jobs, scores them against your verified profile, prepares applications with your **original resume**, and tracks replies and follow-ups. It runs on your own laptop with Docker Desktop.
 
-- **Dry-run is the default.** The starter never submits an application or sends an email.
-- LinkedIn, Naukri, Wellfound, company career sites, and Gmail are represented by connector adapters. They are **not assumed to have API access**. The default adapters report `not_configured` and do not scrape, log in, bypass CAPTCHAs, or submit forms.
-- Enable a real connector only after verifying the provider's current terms, API availability, permissions/scopes, and the specific workflow. Gmail integration requires configuring a Google Cloud OAuth client and consent flow; no Gmail API calls are implemented in this starter.
-- Never put credentials in source control. Use a local `.env` and revoke tokens if exposed.
+**Status:** Phase 0 complete (design, repository, CI/CD). The running app is still the starter scaffold: manual job import, baseline scoring, and dry-run application records. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for what comes next.
 
-## Requirements
+## Safety
 
-- Windows 10/11 with Docker Desktop (Linux containers enabled)
-- Git and a recent Node.js LTS if you want to run the frontend outside Docker
-- Docker Compose v2
+- **Dry-run is the default.** Nothing is submitted and no email is sent. Live submission stays off until a channel is implemented, tested, and explicitly enabled.
+- LinkedIn, Naukri, Wellfound, company career pages, and Gmail are connectors that report `not_configured` until their access is verified. They do not scrape, log in, bypass CAPTCHAs, or submit forms.
+- This is a **public** repository. Only dummy placeholder credentials are committed. Your real keys go in `.env` / `secrets/`, your resume and profile in `storage/`; all are gitignored.
 
-## Start on Windows (PowerShell)
+## Design docs
+
+| Doc | Contents |
+|---|---|
+| [PRD](docs/PRD.md) | Goals, scope, requirements |
+| [HLD](docs/HLD.md) | Architecture, runtime topology, key decisions, delivery pipeline |
+| [LLD](docs/LLD.md) | Package layout, connector interfaces, services, state machines, tasks |
+| [API spec](docs/API_SPEC.md) | `/api/v1` contracts, errors, pagination |
+| [Data model](docs/DATA_MODEL.md) | MongoDB collections and indexes |
+| [Security](docs/SECURITY.md) | Threats, OAuth scopes, secret handling |
+| [Implementation plan](docs/IMPLEMENTATION_PLAN.md) | Phase checklist, integrations to verify |
+
+`CURSOR.md` is the short project memory used by the Cursor agent (current phase, feature inventory, change log).
+
+## Requirements (Windows)
+
+- Windows 10/11 with [Docker Desktop](https://www.docker.com/products/docker-desktop/) (WSL 2 backend, Linux containers)
+- Git, Node.js 20.15+ (22 recommended), Python 3.12 (`winget install Python.Python.3.12`)
+- Optional: `winget install Gitleaks.Gitleaks` and `pip install pre-commit` for local secret scanning
+
+## Quick start (PowerShell)
 
 ```powershell
-Copy-Item .env.example .env
-# Edit .env if you want to change local ports or secrets.
+Copy-Item .env.example .env      # then replace dummy-* values locally if needed
 docker compose up --build
 ```
 
-Then open:
+- Dashboard: http://localhost:5173
 - API docs: http://localhost:8000/docs
-- API health: http://localhost:8000/health
-- React dashboard: http://localhost:5173
+- Health: http://localhost:8000/health
 
-Stop services with `Ctrl+C`, or run `docker compose down`. Add `-v` only if you intend to delete local database/Redis data.
+Stop with `Ctrl+C` or `docker compose down` (add `-v` only to delete local data).
 
-## Run backend tests
+## Testing (fully automated)
+
+Run every CI stage locally:
 
 ```powershell
-docker compose run --rm api pytest -q
+.\scripts\ci.ps1              # secrets scan, backend lint + tests, frontend checks, docker smoke test
+.\scripts\ci.ps1 -SkipDocker  # without Docker
 ```
 
-## Local development without Docker
+| Suite | Location | Needs |
+|---|---|---|
+| Backend unit | `backend/tests/unit` | nothing |
+| Backend integration | `backend/tests/integration` | MongoDB (skipped locally if absent, required in CI) |
+| Stack smoke | `backend/tests/smoke` | running compose stack, `SMOKE_BASE_URL` |
+| Frontend | `frontend/src/**/*.test.ts(x)` | nothing |
+| End-to-end UI | `e2e/` | added in Phase 6 |
 
-Backend (Python 3.11+ recommended):
+## CI/CD
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:APP_ENV = "test"
-pytest -q
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+PR -> secrets scan -> unit + lint -> frontend -> integration (+coverage gate) -> docker build -> compose smoke -> e2e -> merge
+main -> publish images to ghcr.io -> .\scripts\deploy.ps1 on your laptop
 ```
 
-Frontend:
+- [`ci.yml`](.github/workflows/ci.yml) runs on every pull request and push to `main`. A failed stage blocks merging.
+- [`cd.yml`](.github/workflows/cd.yml) publishes `job-application-agent-api` and `job-application-agent-frontend` images to GitHub Container Registry after CI passes on `main`.
+
+### Deploy the latest build locally
 
 ```powershell
-cd frontend
-npm install
-npm run dev -- --host 0.0.0.0
+# one-time: set GHCR_OWNER=<your-github-username> in .env
+.\scripts\deploy.ps1            # pulls latest images, starts the stack, waits for health
+.\scripts\deploy.ps1 -Tag sha-<commit>
 ```
 
-For local frontend development, set `VITE_API_BASE_URL=http://localhost:8000` in `frontend/.env.local`.
+## How we work
 
-## What's implemented
+1. Create a branch `phase-N-<name>`.
+2. Implement with tests; update `CURSOR.md` and this README.
+3. Run `.\scripts\ci.ps1`, push, open a PR.
+4. CI must be green, then merge. CD publishes the images.
 
-- Health endpoint and API route skeleton
-- MongoDB document persistence for normalized jobs, match decisions, and applications
-- Connector capability/status interface for LinkedIn, Naukri, Wellfound, company career pages, and Gmail
-- Manual job import endpoint for testing the pipeline without source API access
-- Deterministic match scoring and 50% threshold
-- Dry-run application creation (records `dry_run`, does not submit)
-- Celery task skeleton with idempotent intent and clear dry-run behavior
-- React dashboard pages for overview, jobs, applications, and settings
-- Unit tests for matching, connector defaults, and dry-run behavior
+## Secrets rules
 
-## Important implementation gaps (intentionally not faked)
+- Never commit `.env`, OAuth client JSON, tokens, keys, or your resume.
+- Committed config values must start with `dummy-`.
+- gitleaks runs in a pre-commit hook (`pre-commit install`), in CI on every PR, and GitHub push protection is enabled.
+- If a secret ever leaks: rotate it at the provider first, then clean history. See [docs/SECURITY.md](docs/SECURITY.md).
 
-1. OAuth authorization and Gmail API client for reading/sending mail.
-2. Provider-approved APIs or permitted workflows for job discovery and submission.
-3. Authentication for multi-user/public deployment. This starter is intended for local use only.
-4. Resume upload/storage and original-resume checksum management.
-5. Reply classification, follow-up scheduling, and real notification delivery.
-6. Production observability, backups, rate-limit persistence, and deployment hardening.
+## Current API (starter, legacy routes)
 
-## Suggested implementation order
-
-1. Run the scaffold and tests; import a sample job manually.
-2. Add profile management and secure resume storage/checksum.
-3. Implement Gmail OAuth read-only ingestion for recruiter alerts; verify Google API scopes and policies first.
-4. Add matching evaluation fixtures and dashboard explanations.
-5. Add a source connector only after confirming permitted access and documenting rate limits.
-6. Add email sending behind a feature flag and explicit dry-run/live mode guard.
-7. Add one supported application workflow; require confirmation on ambiguous outcomes.
-8. Implement follow-up reminders and inbound-reply matching.
-9. Add auth, secrets management, audit retention, backups, and end-to-end tests before anything is exposed beyond localhost.
-
-## API examples
-
-Import a test job:
+These move to `/api/v1` in Phases 1-6 (mapping in [docs/API_SPEC.md](docs/API_SPEC.md#10-legacy-starter-routes-deprecated)).
 
 ```powershell
+# Import a test job
 Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/jobs/import -ContentType 'application/json' -Body '{"source":"manual","source_job_id":"demo-1","company":"Example Co","title":"Backend Engineer","location":"Bengaluru","description":"Python FastAPI REST API MongoDB backend role","canonical_url":"https://example.com/jobs/demo-1"}'
-```
 
-List jobs:
-
-```powershell
+# List jobs
 Invoke-RestMethod http://localhost:8000/api/jobs
-```
 
-Create a dry-run application for a job (replace the ID):
-
-```powershell
+# Create a dry-run application (replace the ID)
 Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/applications -ContentType 'application/json' -Body '{"job_id":"REPLACE_WITH_JOB_ID"}'
 ```
-
-The endpoint refuses to create a live application. Live mode is deliberately not implemented until a provider-specific connector and safety checks are added.

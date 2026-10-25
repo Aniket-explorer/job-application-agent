@@ -1,0 +1,68 @@
+# Runs the published images from GitHub Container Registry on this laptop.
+# Used by scripts/deploy.ps1. All ports bind to 127.0.0.1 only.
+x-backend: &backend
+  image: ghcr.io/${GHCR_OWNER}/job-application-agent-api:${IMAGE_TAG:-latest}
+  env_file: .env
+  environment:
+    MONGODB_URL: mongodb://mongo:27017
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/1
+    CELERY_RESULT_BACKEND: redis://redis:6379/2
+  volumes:
+    - ./storage:/app/storage
+    - ./secrets:/app/secrets
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  worker:
+    <<: *backend
+    command: celery -A app.worker.celery_app worker --loglevel=INFO --pool=solo
+
+  beat:
+    <<: *backend
+    command: celery -A app.worker.celery_app beat --loglevel=INFO --schedule /tmp/celerybeat-schedule
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER}/job-application-agent-frontend:${IMAGE_TAG:-latest}
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:

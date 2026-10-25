@@ -3,7 +3,27 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": {"dev": "vite", "build": "tsc -b && vite build", "test": "vitest run"},
-  "dependencies": {"@vitejs/plugin-react": "latest", "vite": "latest", "react": "latest", "react-dom": "latest", "lucide-react": "latest"},
-  "devDependencies": {"@types/react": "latest", "@types/react-dom": "latest", "typescript": "latest", "vitest": "latest", "jsdom": "latest"}
+  "engines": {
+    "node": ">=20.15"
+  },
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "lucide-react": "^0.577.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "jsdom": "^26.1.0",
+    "typescript": "~5.8.3",
+    "vite": "^6.4.5",
+    "vitest": "^3.2.7"
+  }
 }

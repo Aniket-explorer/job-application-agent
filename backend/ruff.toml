@@ -1,0 +1,9 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+# Import sorting ("I") and pyupgrade ("UP") are added in Phase 1 with the package restructure.
+select = ["E4", "E7", "E9", "F", "B"]
+
+[lint.per-file-ignores]
+"tests/integration/conftest.py" = ["E402"]

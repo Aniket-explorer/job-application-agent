@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, HttpUrl, ConfigDict
+from pydantic import BaseModel, Field, HttpUrl
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
