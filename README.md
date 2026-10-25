@@ -1,6 +1,6 @@
 # AI Job Application Agent
 
-[![CI](https://github.com/OWNER/job-application-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/job-application-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/Aniket-explorer/job-application-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Aniket-explorer/job-application-agent/actions/workflows/ci.yml)
 
 A personal, local-first assistant that discovers jobs, scores them against your verified profile, prepares applications with your **original resume**, and tracks replies and follow-ups. It runs on your own laptop with Docker Desktop.
 
