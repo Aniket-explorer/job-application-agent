@@ -46,7 +46,7 @@ flowchart LR
 | `redis` | Broker, locks, rate-limit counters, cache | - |
 | `frontend` | Dashboard | No |
 
-All ports bind to `127.0.0.1` only (from Phase 1). Nothing is exposed to the internet.
+The API and dashboard bind to `127.0.0.1` only. MongoDB and Redis are not published on the host. Nothing is exposed to the internet.
 
 ## 4. Architectural rules
 
@@ -64,7 +64,7 @@ All ports bind to `127.0.0.1` only (from Phase 1). Nothing is exposed to the int
 
 | Decision | Choice | Reason |
 |---|---|---|
-| Mongo driver | PyMongo native async (`AsyncMongoClient`) | Motor is deprecated in favour of it; one driver only. The starter's Motor usage is migrated in Phase 1. |
+| Mongo driver | PyMongo native async (`AsyncMongoClient`) | Motor was removed in Phase 1. One driver only. |
 | Settings storage | `automation_settings` singleton document in Mongo | The starter keeps settings in a process-global variable, which is lost on restart and not shared between api and worker. |
 | API versioning | `/api/v1/*` | Starter `/api/*` routes stay as deprecated aliases until the frontend migrates (Phase 6). |
 | Matching | Deterministic, explainable factor scoring first | Reproducible and testable; any later AI scoring only feeds factors and never decides eligibility. |

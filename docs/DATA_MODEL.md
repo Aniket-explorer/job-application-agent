@@ -161,7 +161,9 @@ Indexes: `created_at`; `(entity_type, entity_id, created_at)`; `(event_type, cre
 ## Additional collections
 
 ### automation_settings (singleton, `_id: "global"`)
-`dry_run` (default true), `global_pause` (default true), `automation_enabled` (default false), `min_match_score` (50), `discovery_interval_minutes` (60), `followups_enabled` (true), `live_channels` ([]), `updated_at`, `updated_by`. Seeded from environment on first start; afterwards Mongo is the source of truth.
+Implemented in Phase 1. Fields stored: `dry_run`, `minimum_match_score`, `search_interval_minutes`, `followup_enabled`, `global_pause`, `automation_enabled`, `updated_at`.
+
+Seeded from the environment on first start. After that, MongoDB is the source of truth and is reloaded on startup. Reads and writes force `dry_run=true` and `automation_enabled=false`, so a saved document cannot turn live submission on. `live_channels` is added with the orchestrator in a later phase.
 
 ### task_runs
 `_id`, `task_name`, `run_key` (e.g. `discovery:linkedin:2026-10-25T18`), `correlation_id`, `status` (`queued`, `running`, `succeeded`, `failed`, `skipped`), `started_at`, `finished_at`, `attempt`, `result_summary`, `error_code`. Indexes: `run_key` unique; `(task_name, started_at)`. A TTL index on `finished_at` (90 days) is allowed here because task runs are operational logs, not application records.

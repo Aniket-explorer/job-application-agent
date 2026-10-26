@@ -51,6 +51,8 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
-# --- Logs ---
+# --- Logs and local scheduler state ---
 *.log
 logs/
+celerybeat-schedule
+celerybeat-schedule.*
