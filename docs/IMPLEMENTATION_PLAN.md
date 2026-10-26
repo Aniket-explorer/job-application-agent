@@ -12,18 +12,20 @@ Every phase: branch `phase-N-<name>`, open a PR, CI must be green, update `READM
 - [x] Public GitHub repo, secret scanning and push protection, branch protection
 
 ## Phase 1 - Backend foundation
-- [ ] Package layout from LLD 1; app factory; routers under `/api/v1`
-- [ ] `core/config.py` with all `.env` keys, startup validation
-- [ ] PyMongo async client, `db/indexes.py`, remove Motor
-- [ ] Repository base class; `automation_settings` repository (replaces in-memory global)
-- [ ] Structured JSON logging, correlation ID middleware, redaction filter
-- [ ] Error envelope and exception handlers
-- [ ] `/api/v1/health`, `/api/v1/ready` (Mongo + Redis)
-- [ ] Compose: healthchecks, ports bound to `127.0.0.1`, `depends_on: condition: service_healthy`
-- [ ] Pinned backend dependencies
-- [ ] Tests: config validation, ready endpoint (up/down), error envelope, settings persistence
+- [x] Package layout for this phase: `core/`, `db/`, `repositories/`, `services/`, `api/v1/`
+- [x] `core/config.py` with the `.env` keys and startup validation
+- [x] PyMongo async client, `db/indexes.py`, Motor removed
+- [x] Repositories for jobs, applications, settings, and audit. Settings replace the in-memory global
+- [x] Structured JSON logging, correlation ID middleware, secret redaction
+- [x] Error envelope and exception handlers
+- [x] `/api/v1/health`, `/api/v1/ready` (Mongo + Redis)
+- [x] Versioned job, application, source, and settings routes. Legacy `/api/*` routes call the same services
+- [x] Dashboard reads `/api/v1` and shows loading and error text
+- [x] Compose: healthchecks, ports bound to `127.0.0.1`, `depends_on: condition: service_healthy`
+- [x] Pinned backend dependencies
+- [x] Tests: config validation, ready endpoint, error envelope, settings persistence, duplicate prevention, existing document shape
 
-Exit: backend starts, `/ready` reports Mongo and Redis ok; CI green.
+Exit: backend starts, `/ready` reports Mongo and Redis ok. Matching redesign, SSRF checks, and background evaluation stay in Phase 2. Live submission stays off.
 
 ## Phase 2 - Job domain
 - [ ] Job models, repository, URL canonicalizer + SSRF guard

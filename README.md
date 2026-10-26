@@ -4,7 +4,7 @@
 
 A personal, local-first assistant that discovers jobs, scores them against your verified profile, prepares applications with your **original resume**, and tracks replies and follow-ups. It runs on your own laptop with Docker Desktop.
 
-**Status:** Phase 0 complete (design, repository, CI/CD). The running app is still the starter scaffold: manual job import, baseline scoring, and dry-run application records. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for what comes next.
+**Status:** Phase 1 complete (versioned API, MongoDB repositories, persisted settings). The dashboard reads `/api/v1`. Discovery connectors are still unconfigured, and applications are dry-run only. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ## Safety
 
@@ -28,7 +28,7 @@ A personal, local-first assistant that discovers jobs, scores them against your 
 
 ## Requirements (Windows)
 
-- Windows 10/11 with [Docker Desktop](https://www.docker.com/products/docker-desktop/) (WSL 2 backend, Linux containers)
+- Windows 10/11 with [Docker Desktop](https://www.docker.com/products/docker-desktop/) (WSL 2 backend, Linux containers). MongoDB and Redis stay on the Compose network and are not published on the host, so a local MongoDB install does not collide with them.
 - Git, Node.js 20.15+ (22 recommended), Python 3.12 (`winget install Python.Python.3.12`)
 - Optional: `winget install Gitleaks.Gitleaks` and `pip install pre-commit` for local secret scanning
 
@@ -57,7 +57,7 @@ Run every CI stage locally:
 | Suite | Location | Needs |
 |---|---|---|
 | Backend unit | `backend/tests/unit` | nothing |
-| Backend integration | `backend/tests/integration` | MongoDB (skipped locally if absent, required in CI) |
+| Backend integration | `backend/tests/integration` | MongoDB. Uses database `job_agent_integration_test` only. Redis on localhost; if none is running, the suite starts a temporary container bound to `127.0.0.1` and removes it afterward. The Compose Redis service stays unpublished. |
 | Stack smoke | `backend/tests/smoke` | running compose stack, `SMOKE_BASE_URL` |
 | Frontend | `frontend/src/**/*.test.ts(x)` | nothing |
 | End-to-end UI | `e2e/` | added in Phase 6 |
@@ -94,17 +94,22 @@ main -> publish images to ghcr.io -> .\scripts\deploy.ps1 on your laptop
 - gitleaks runs in a pre-commit hook (`pre-commit install`), in CI on every PR, and GitHub push protection is enabled.
 - If a secret ever leaks: rotate it at the provider first, then clean history. See [docs/SECURITY.md](docs/SECURITY.md).
 
-## Current API (starter, legacy routes)
+## Current API
 
-These move to `/api/v1` in Phases 1-6 (mapping in [docs/API_SPEC.md](docs/API_SPEC.md#10-legacy-starter-routes-deprecated)).
+Versioned routes live under `/api/v1`. The original `/api/*` routes still work and use the same database records. Details are in [docs/API_SPEC.md](docs/API_SPEC.md).
 
 ```powershell
+# Readiness (MongoDB and Redis)
+Invoke-RestMethod http://localhost:8000/api/v1/ready
+
 # Import a test job
-Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/jobs/import -ContentType 'application/json' -Body '{"source":"manual","source_job_id":"demo-1","company":"Example Co","title":"Backend Engineer","location":"Bengaluru","description":"Python FastAPI REST API MongoDB backend role","canonical_url":"https://example.com/jobs/demo-1"}'
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/jobs/import -ContentType 'application/json' -Body '{"source":"manual","source_job_id":"demo-1","company":"Example Co","title":"Backend Engineer","location":"Bengaluru","description":"Python FastAPI REST API MongoDB backend role","canonical_url":"https://example.com/jobs/demo-1"}'
 
 # List jobs
-Invoke-RestMethod http://localhost:8000/api/jobs
+Invoke-RestMethod http://localhost:8000/api/v1/jobs
 
-# Create a dry-run application (replace the ID)
-Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/applications -ContentType 'application/json' -Body '{"job_id":"REPLACE_WITH_JOB_ID"}'
+# Prepare a dry-run application (replace the ID). This does not submit anything.
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/jobs/REPLACE_WITH_JOB_ID/prepare-application -ContentType 'application/json' -Body '{}'
 ```
+
+Saved settings are in MongoDB (`automation_settings`). The API rejects `dry_run=false`.

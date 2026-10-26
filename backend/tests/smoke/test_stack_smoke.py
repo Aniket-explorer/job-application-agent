@@ -45,6 +45,21 @@ def test_import_evaluate_and_dry_run_application_flow(api):
     assert application["status"] == "dry_run"
 
 
+def test_versioned_api_sees_the_same_dry_run_record(api):
+    ready = api.get("/api/v1/ready")
+    assert ready.status_code == 200
+    assert ready.json()["checks"]["mongodb"] == "ok"
+    assert ready.json()["checks"]["redis"] == "ok"
+
+    job = api.post("/api/v1/jobs/import", json=job_payload(f"smoke-v1-{uuid.uuid4().hex[:8]}")).json()
+    assert job["created"] is True
+    application = api.post(f"/api/v1/jobs/{job['id']}/prepare-application", json={})
+    assert application.status_code == 201
+    assert application.json()["dry_run"] is True
+    listed = api.get("/api/applications").json()
+    assert application.json()["id"] in [item["id"] for item in listed]
+
+
 def test_live_submission_is_blocked(api):
     response = api.put("/api/settings", json={"dry_run": False, "minimum_match_score": 50})
     assert response.status_code == 400

@@ -50,6 +50,12 @@ class AutomationSettings(BaseModel):
     minimum_match_score: int = Field(default=50, ge=0, le=100)
     search_interval_minutes: int = Field(default=60, ge=60, le=1440)
     followup_enabled: bool = True
+    global_pause: bool = True
+    automation_enabled: bool = False
+
+
+class PrepareApplication(BaseModel):
+    candidate_id: str = "default-candidate"
 
 class ConnectorStatus(BaseModel):
     source: str

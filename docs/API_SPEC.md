@@ -1,5 +1,18 @@
 # API Specification (`/api/v1`)
 
+## Phase 1 status
+
+Implemented and used by the dashboard:
+
+- `GET /health` (legacy shape, kept)
+- `GET /api/v1/health`, `GET /api/v1/ready`
+- `GET/POST /api/v1/jobs`, `GET /api/v1/jobs/{job_id}`, `POST /api/v1/jobs/import`, `POST /api/v1/jobs/{job_id}/prepare-application`
+- `GET /api/v1/applications`, `GET /api/v1/applications/{application_id}`
+- `GET/PUT /api/v1/automation/settings`
+- `GET /api/v1/sources`, `GET /api/v1/sources/{source_name}`
+
+The starter routes under `/api/*` call the same services and keep their previous response shapes. Job import still requires the fields the starter accepted (`source_job_id`, `company`, `title`, `description`, `canonical_url`). URL-only import, evaluation tasks, profile, follow-ups, and live submission are later phases. `dry_run` cannot be set to false.
+
 ## 1. Conventions
 
 - JSON only. Timestamps are ISO 8601 UTC. IDs are Mongo ObjectId strings.
