@@ -1,0 +1,19 @@
+title = "job-application-agent gitleaks config"
+
+[extend]
+useDefault = true
+
+# Only clearly fake placeholder values are allowed. Anything that looks like a
+# real key still fails the scan.
+[allowlist]
+description = "Dummy placeholder values committed in .env.example files and test fixtures"
+regexTarget = "match"
+regexes = [
+  '''dummy-[A-Za-z0-9._-]*''',
+]
+# Third-party dependency and build folders are gitignored and never committed.
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+]

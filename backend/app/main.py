@@ -56,7 +56,7 @@ async def import_job(payload: JobImport):
     except DuplicateKeyError:
         existing = await db.jobs.find_one({"source": payload.source, "source_job_id": payload.source_job_id})
         if not existing:
-            raise HTTPException(status_code=409, detail="Duplicate job detected")
+            raise HTTPException(status_code=409, detail="Duplicate job detected") from None
         doc = existing
     return serialize_job(doc)
 

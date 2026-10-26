@@ -1,0 +1,29 @@
+---
+description: Project memory, documentation upkeep, testing, and secret rules for the job application agent
+alwaysApply: true
+---
+
+# Project memory
+
+- Read `CURSOR.md` at the start of every task before exploring the codebase. Use it and the linked `docs/` instead of re-reading the whole repo.
+- Work phase by phase per `docs/IMPLEMENTATION_PLAN.md`. Stop at the end of each phase and wait for user confirmation.
+
+# For every new or changed function, endpoint, task, connector, or page
+
+1. Add or update automated tests (unit, integration, smoke, or frontend). No manual-only verification.
+2. Update `CURSOR.md`: the functionality inventory row, the current phase, and a one-line dated change log entry.
+3. Update `README.md` when setup, features, commands, or status change.
+4. Update the relevant `docs/` file if an architecture decision, API contract, or data model changes.
+
+# Secrets and personal data (public repository)
+
+- Never commit real credentials, tokens, OAuth client secrets, resumes, or personal profile data.
+- Committed config uses only `dummy-*` placeholder values (allowlisted in `.gitleaks.toml`).
+- Real values belong in `.env`, `secrets/`, or `storage/` (gitignored).
+- Run `gitleaks git .` before committing; CI also blocks leaks.
+
+# Safety
+
+- Never enable live application submission or email sending by default.
+- All submission paths go through `ApplicationOrchestrator`; never call a channel from a route.
+- Do not invent API capabilities or bypass platform restrictions.
