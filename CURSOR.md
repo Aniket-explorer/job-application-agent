@@ -23,17 +23,18 @@ Python 3.12, FastAPI, Pydantic v2, MongoDB (PyMongo async), Redis, Celery + Beat
 backend/app/main.py            app factory, correlation id, error handlers, legacy /health
 backend/app/core/              config, JSON logging, error envelope
 backend/app/db/                PyMongo async client, indexes
-backend/app/repositories/      jobs, applications, automation_settings, audit
-backend/app/services/          jobs, applications, settings, sources
+backend/app/repositories/      jobs, applications, automation_settings, audit, matches
+backend/app/services/          jobs, applications, settings, sources, scoring
+backend/app/scoring/           profile reader and phase2-v1 factor engine
 backend/app/api/v1/            versioned routes
 backend/app/api/legacy.py      original /api/* routes, same services
-backend/app/connectors/        base.py + stubs.py (all unconfigured)
+backend/app/connectors/        base.py, stubs.py, career_page/greenhouse.py (list API, off by default)
 backend/tests/unit|integration|smoke
 frontend/src/                  App.tsx (4 pages), api.ts loadWorkspace()
 ```
 
 ## Current phase
-**Phase 1 complete (versioned API, repositories, persisted settings).** Next: Phase 2 job domain (normalization, dedup signals, matching redesign). Wait for user confirmation.
+**Phase 2 in progress.** Milestone 1 (Greenhouse job-list connector) passed review. Milestone 2 (explainable matching) is implemented locally. Milestone 3 adds a manual career-page sync endpoint. Milestone 4 adds a confirmed Sync jobs button on the Connectors page. Beat does not call Greenhouse. `dry_run` stays true and `automation_enabled` stays false.
 
 ## Functionality inventory
 Update this table whenever a function, endpoint, task, connector, or page is added, changed, or removed.
@@ -42,15 +43,20 @@ Update this table whenever a function, endpoint, task, connector, or page is add
 |---|---|---|---|---|
 | Liveness | `GET /health`, `GET /api/v1/health` | app/main.py, api/v1/routes/health.py | integration, smoke | legacy health includes Mongo and dry_run |
 | Readiness | `GET /api/v1/ready` | api/v1/routes/health.py | integration/test_v1_api.py, smoke | Mongo + Redis, 503 when either is down |
-| Connector status | `GET /api/v1/sources`, `GET /api/connectors` | services/sources.py | unit/test_connectors.py, integration, smoke | all 5 unconfigured |
+| Connector status | `GET /api/v1/sources`, `GET /api/connectors` | services/sources.py | unit/test_connectors.py, integration, smoke | four sources unconfigured; career_page is Greenhouse list-only and disabled unless configured |
+| Greenhouse job list | `CareerPageConnector`, `sync_greenhouse_boards()` | connectors/career_page, services/discovery.py | unit/test_greenhouse.py, integration/test_greenhouse_sync.py | fixture tests only; Beat does not call it; no apply endpoint |
+| Manual Greenhouse sync | `POST /api/v1/sources/career_page/sync` | api/v1/routes/sources.py, services/discovery.py | integration/test_career_page_sync_api.py, unit/test_greenhouse.py, unit/test_task_safety.py | disabled and empty boards return 422 with no HTTP call; scores discovered rows with the existing scorer |
 | Manual job import + score | `POST /api/v1/jobs/import`, `POST /api/jobs/import` | services/jobs.py | integration, smoke | same records on both routes |
 | Job list / detail | `GET /api/v1/jobs`, `GET /api/jobs/{id}` | services/jobs.py | integration | v1 returns a page envelope |
 | Dry-run application | `POST /api/v1/jobs/{id}/prepare-application`, `POST /api/applications` | services/applications.py | integration, smoke | dry-run only; v1 duplicate is 409 |
 | Application list / detail | `GET /api/v1/applications` | services/applications.py | integration | existing documents stay readable |
 | Settings | `GET/PUT /api/v1/automation/settings`, `GET/PUT /api/settings` | services/settings.py | integration/test_v1_api.py, unit/test_config.py | Mongo singleton; dry_run forced true |
-| Match scoring (baseline) | `calculate_match_score()` | app/matching.py | unit/test_matching.py | hardcoded default skills; redesign in Phase 2 |
+| Match scoring (baseline import) | `calculate_match_score()` | app/matching.py | unit/test_matching.py | still used by manual import; job documents are not rewritten by the new scorer |
+| Explainable match scoring | `POST /api/v1/jobs/score`, `POST /api/v1/jobs/{id}/score` | scoring/engine.py, services/scoring.py | unit/test_scoring.py, integration/test_scoring_api.py | unknown factors are excluded; threshold is the stored minimum |
+| Profile and resume status | `GET /api/v1/profile/status` | scoring/profile.py | unit/test_profile.py, integration/test_scoring_api.py | read-only; PDF text via pypdf; missing files are reported and not invented |
+| Job match storage | `job_matches` | repositories/matches.py | integration/test_scoring_api.py | unique on candidate, job, and matching version |
 | Hourly scan placeholder | Celery `app.tasks.hourly_scan` | app/tasks.py | unit/test_task_safety.py | no external calls |
-| Dashboard (4 views) | `/` | frontend/src/App.tsx, api.ts | src/api.test.ts | loads `/api/v1`, loading and error states |
+| Dashboard (4 views) | `/` | frontend/src/App.tsx, JobsPage.tsx, CareerPageSync.tsx, api.ts | src/api.test.ts, src/jobFeed.test.tsx, src/syncJobs.test.tsx | Jobs page separates manual test records from discovered listings. Connectors page confirms before a manual Greenhouse sync |
 
 ## Conventions
 - Layers: routes -> services -> repositories/connectors. No DB or external calls in routes.
@@ -70,6 +76,12 @@ Update this table whenever a function, endpoint, task, connector, or page is add
 - Legacy `/api/*` routes remain and share the PyMongo repositories with `/api/v1`.
 
 ## Change log
+- 2026-10-26 Phase 2 milestone 4: Connectors page Sync jobs button calls the manual career-page sync route after confirmation, shows the safe summary, and refreshes the job list. It does not run on page load or change connector settings.
+- 2026-10-26 Phase 2 milestone 3 tests: mixed-board rate limit, lock release after a board-loop exception, manual source-id collision, and a non-default stored threshold. httpx request logs stay at WARNING so board tokens in request URLs are not written.
+- 2026-10-26 Phase 2 milestone 3: manual `POST /api/v1/sources/career_page/sync` imports Greenhouse list fixtures, updates existing discovered rows, and scores them with the existing explainable scorer. Disabled or empty board configuration makes no external request. Beat is unchanged.
+- 2026-10-26 Phase 2 milestone 2 review: `min_score` uses the explainable total, missing profile and resume are reported, PDF text is read with pypdf without writing the file, and CORS allows the dashboard on both localhost and 127.0.0.1.
+- 2026-10-26 Phase 2 milestone 2: explainable match scores in `job_matches`, versioned score endpoints, and a Jobs page that filters on the stored minimum and labels manual test records separately. Unknown factors stay unscored. Greenhouse stays disabled.
+- 2026-10-26 Phase 2 milestone 1: Greenhouse Job Board list connector for `career_page`, with normalization, retries, rate limit, sync lock, and idempotent discovered-job upsert. Disabled by default. No scheduler calls and no submission.
 - 2026-10-26 Phase 1 test fix: integration readiness test starts an isolated Redis on 127.0.0.1 when the host has none. Compose Redis stays unpublished. Integration tests always use database `job_agent_integration_test`.
 - 2026-10-26 Phase 1: PyMongo async replaces Motor; repositories for jobs, applications, settings, and audit; `/api/v1` health, ready, jobs, applications, sources, and settings; legacy routes kept; settings persist in Mongo with dry-run forced on; dashboard reads `/api/v1`; compose healthchecks and localhost-only ports.
 - 2026-10-25 Phase 0: git init + baseline commit; secret protection; design docs; unit/integration/smoke tests; CI/CD; CURSOR.md.

@@ -47,3 +47,6 @@ def configure_logging(level: str) -> None:
         named = logging.getLogger(name)
         named.handlers.clear()
         named.propagate = True
+    # httpx logs the full request URL at INFO. Greenhouse board tokens are in that URL.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)

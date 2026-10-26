@@ -5,6 +5,7 @@ from app.models import utcnow
 from app.repositories.applications import ApplicationRepository
 from app.repositories.audit import AuditRepository
 from app.repositories.jobs import JobRepository
+from app.repositories.matches import MatchRepository
 from app.services.settings import SettingsService
 
 
@@ -33,6 +34,10 @@ class ApplicationService:
             raise NotFoundError("Job not found")
         policy = await self._settings.get()
         score = float(job.get("match_score") or 0)
+        stored = await MatchRepository().get(job_id)
+        if stored is not None:
+            total = stored.get("total_score")
+            score = float(total) if total is not None else 0.0
         if score < policy.minimum_match_score:
             raise BelowThresholdError(f"Match score {score} is below threshold {policy.minimum_match_score}")
         now = utcnow()

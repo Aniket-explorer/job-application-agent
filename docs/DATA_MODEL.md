@@ -21,7 +21,7 @@ Driver: PyMongo native async (`AsyncMongoClient`). All documents are validated t
 
 Indexes: `candidate_id` unique.
 
-The real profile is never committed. Tests use a fictional fixture.
+The real profile is never committed. Tests use a fictional fixture. Milestone 2 reads `storage/profile.json` from disk instead of this collection. The file is not created automatically. A named `.pdf`, `.txt`, or `.md` resume is read from `storage/resumes/` and is not modified. PDF text extraction uses `pypdf`.
 
 ## jobs
 | Field | Type | Notes |
@@ -51,21 +51,30 @@ The real profile is never committed. Tests use a fictional fixture.
 
 Indexes: `(source, source_job_id)` unique, partial filter `source_job_id` exists and is a string; `canonical_url` (unique partial where set); `(company_normalized, title_normalized)`; `(status, last_seen_at)`; `first_seen_at`.
 
-## job_matches
-| Field | Type |
-|---|---|
-| `_id` | ObjectId |
-| `candidate_id` | str |
-| `job_id` | ObjectId |
-| `technical_skills_score`, `role_responsibility_score`, `experience_score`, `domain_relevance_score`, `location_score` | float 0..100 |
-| `total_score` | float 0..100 |
-| `threshold` | float |
-| `hard_exclusions` | list[{code, detail}] |
-| `explanation` | list[str] |
-| `evaluated_at` | datetime |
-| `matching_version` | str |
+Phase 2 milestone 1 writes these fields on Greenhouse rows only: `origin=discovered`, `provider=greenhouse`, `board_token`, `company_normalized`, `title_normalized`, `location_normalized`, `posted_at`, `content_hash`, `first_seen_at`, `last_seen_at`. Missing Greenhouse fields are stored as null. The extra unique `canonical_url` index is not created yet. Manual rows are not updated by discovery. `source_job_id` for these rows is `greenhouse:{board_token}:{job_id}`.
 
-Indexes: `(candidate_id, job_id, matching_version)` unique; `(candidate_id, total_score)`.
+## job_matches
+Implemented in Phase 2 milestone 2. One row per `(candidate_id, job_id, matching_version)`. Re-scoring replaces that row and does not rewrite the job or any application.
+
+| Field | Type | Notes |
+|---|---|---|
+| `_id` | ObjectId | |
+| `candidate_id` | str | `default-candidate` for the local profile |
+| `job_id` | str | job ObjectId as a string |
+| `matching_version` | str | `phase2-v1` |
+| `total_score` | float? | null when no factor can be scored; otherwise 0..100 |
+| `threshold` | float | settings value at score time |
+| `meets_threshold` | bool | recomputed on read from the current settings threshold |
+| `match_status` | str | `scored`, `insufficient_profile`, or `insufficient_information` |
+| `factors` | list[{key, weight, status, score?, findings[]}] | `score` is null when `status` is `unknown` |
+| `matched_skills`, `missing_skills` | list[str] | missing lists required skills only |
+| `warnings` | list[str] | includes `unknown:{factor}` for excluded factors |
+| `weight_used`, `weight_excluded` | int | weights are 30, 25, 20, 15, and 10 |
+| `content_hash` | str | hash of the job fields that affect the score |
+| `profile_fingerprint` | str | hash of the profile and resume text, not the resume body |
+| `evaluated_at` | datetime | |
+
+Index in use: `(candidate_id, job_id, matching_version)` unique. The extra `(candidate_id, total_score)` index is not created yet.
 
 ## applications
 | Field | Type | Notes |

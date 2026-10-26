@@ -13,6 +13,35 @@ Implemented and used by the dashboard:
 
 The starter routes under `/api/*` call the same services and keep their previous response shapes. Job import still requires the fields the starter accepted (`source_job_id`, `company`, `title`, `description`, `canonical_url`). URL-only import, evaluation tasks, profile, follow-ups, and live submission are later phases. `dry_run` cannot be set to false.
 
+`GET /api/v1/sources` still returns the Phase 1 connector shape and does not include Greenhouse board tokens. `career_page` reports `configured` only when `ENABLE_CAREER_PAGE_CONNECTOR` is true and `GREENHOUSE_BOARDS` contains at least one valid `token|Company` pair.
+
+Phase 2 milestone 2 adds scoring routes. They read `PROFILE_PATH` and, when the profile names one, a `.txt`, `.md`, or `.pdf` resume under `RESUME_STORAGE_PATH`. PDF text is extracted in memory with `pypdf`. The profile and the original resume are never written. Responses omit `name`, `email`, `phone`, and the resume text. A missing profile returns `match_status=insufficient_profile` and `total_score=null`. Invalid profile JSON returns `422 profile_invalid`.
+
+`GET /api/v1/profile/status` returns `profile_present`, `profile_valid`, `resume_text_available`, `warnings`, and `message`. It does not return profile facts or a filename.
+
+`GET /api/v1/jobs?min_score=` filters on the stored explainable `total_score` when `min_score` is greater than 0. A job with no assessment, or an assessment whose total is null, is excluded. The older import `match_score` is not used for that filter. `min_score=0` returns every stored job, including manual test records that have not been scored. Those records still include `origin` so the dashboard can label them.
+
+| Method | Path | Result |
+|---|---|---|
+| POST | `/api/v1/jobs/score` | Recalculates every stored job and upserts `job_matches` for version `phase2-v1`. Body: `{scored, items[]}` |
+| POST | `/api/v1/jobs/{job_id}/score` | One assessment. `404 not_found` when the id is missing or not an ObjectId |
+| GET | `/api/v1/jobs` | Also accepts `origin=manual\|discovered`. Each item adds `origin`. `assessment` is present only when a stored match exists. `min_score` above 0 uses the explainable `total_score` and ignores the import score |
+| GET | `/api/v1/jobs/{job_id}` | Adds the same `assessment` when one is stored |
+
+`assessment` fields: `total_score` (number or null), `threshold` (the current stored minimum, default 50), `meets_threshold`, `match_status` (`scored`, `insufficient_profile`, or `insufficient_information`), `factors[]` (`key`, `weight`, `status`, `score`, `findings`), `matched_skills`, `missing_skills`, `warnings`, `weight_used`, `weight_excluded`. A factor with `status=unknown` has `score=null` and is left out of the weighted total. A confirmed mismatch is a numeric score, including 0. The total is renormalized over the factors that have a score and stays within 0–100.
+
+Phase 2 milestone 3 adds a manual Greenhouse sync. It does not add a schedule, and it does not change `dry_run` or `automation_enabled`.
+
+| Method | Path | Result |
+|---|---|---|
+| POST | `/api/v1/sources/career_page/sync` | One list sync for boards already set in `GREENHOUSE_BOARDS` |
+
+`422 connector_disabled` when `ENABLE_CAREER_PAGE_CONNECTOR` is false. `422 no_boards` when the board list is empty or has no valid `token|Company` pair. Both responses are returned before any HTTP client is created. `409 sync_in_progress` when another career-page sync holds the Redis lock. A completed run returns `200` with `boards_checked`, `jobs_fetched`, `jobs_created`, `jobs_updated`, `duplicates_skipped`, `jobs_skipped`, `matches_written`, and `errors` (`[{code}]`). Error codes are short (`board_not_found`, `rate_limited`, `profile_invalid`, and the connector's existing codes). The body does not include board tokens, resume text, or profile contact fields.
+
+The Connectors page shows a Sync jobs button for this route. The button asks for confirmation, stays disabled while the request is in progress, and is not called on page load. A disabled connector or an empty board list is explained from `GET /api/v1/sources` and the button stays disabled. The dashboard does not change `ENABLE_CAREER_PAGE_CONNECTOR` or `GREENHOUSE_BOARDS`.
+
+Discovered rows are stored with `origin=discovered`. A repeated sync updates the same `(source, source_job_id)` row. A manual row with that key is counted in `duplicates_skipped` and is not overwritten. Jobs missing from a later response are left in place. Created and updated discovered jobs are scored with the existing phase2-v1 algorithm and the stored minimum score. The sync does not create applications and does not call an apply endpoint. Beat still runs only `hourly_scan`, which makes no external request.
+
 ## 1. Conventions
 
 - JSON only. Timestamps are ISO 8601 UTC. IDs are Mongo ObjectId strings.
@@ -37,7 +66,7 @@ Internal exception text is never returned.
 | 401 / 403 | `unauthenticated`, `forbidden` |
 | 404 | `not_found`, `unknown_source` |
 | 409 | `conflict`, `duplicate`, `invalid_state_transition` |
-| 422 | `validation_error`, `policy_violation`, `below_threshold` |
+| 422 | `validation_error`, `policy_violation`, `below_threshold`, `profile_invalid` |
 | 423 | `automation_paused` |
 | 429 | `rate_limited` |
 | 503 | `integration_unconfigured`, `dependency_unavailable` |

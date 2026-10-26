@@ -21,14 +21,35 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type MatchFactor = {
+  key: string;
+  weight: number;
+  status: string;
+  score: number | null;
+  findings: string[];
+};
+export type MatchAssessment = {
+  total_score: number | null;
+  threshold: number;
+  meets_threshold: boolean;
+  match_status: string;
+  factors: MatchFactor[];
+  matched_skills: string[];
+  missing_skills: string[];
+  warnings: string[];
+  weight_used: number;
+  weight_excluded: number;
+};
 export type Job = {
   id: string;
   source: string;
   company: string;
   title: string;
   location?: string;
-  canonical_url: string;
-  match_score?: number;
+  canonical_url?: string | null;
+  match_score?: number | null;
+  origin?: 'manual' | 'discovered';
+  assessment?: MatchAssessment;
   status: string;
   created_at: string;
 };
@@ -60,13 +81,36 @@ export type AutomationSettings = {
   automation_enabled: boolean;
 };
 export type Page<T> = { items: T[]; total: number; page: number; page_size: number };
+export type ProfileStatus = {
+  profile_present: boolean;
+  profile_valid: boolean;
+  resume_text_available: boolean;
+  warnings: string[];
+  message: string;
+};
+export type SyncSummary = {
+  status: string;
+  boards_checked: number;
+  jobs_fetched: number;
+  jobs_created: number;
+  jobs_updated: number;
+  duplicates_skipped: number;
+  jobs_skipped: number;
+  matches_written: number;
+  errors: { code: string }[];
+};
+
+export function syncCareerPage() {
+  return api<SyncSummary>('/api/v1/sources/career_page/sync', { method: 'POST', body: '{}' });
+}
 
 export async function loadWorkspace() {
-  const [jobsPage, applicationsPage, connectors, settings] = await Promise.all([
+  const [jobsPage, applicationsPage, connectors, settings, profile] = await Promise.all([
     api<Page<Job>>('/api/v1/jobs?page_size=100'),
     api<Page<Application>>('/api/v1/applications?page_size=100'),
     api<Connector[]>('/api/v1/sources'),
     api<AutomationSettings>('/api/v1/automation/settings'),
+    api<ProfileStatus>('/api/v1/profile/status'),
   ]);
-  return { jobs: jobsPage.items, applications: applicationsPage.items, connectors, settings };
+  return { jobs: jobsPage.items, applications: applicationsPage.items, connectors, settings, profile };
 }

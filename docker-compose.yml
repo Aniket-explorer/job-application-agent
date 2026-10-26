@@ -7,6 +7,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      PROFILE_PATH: /storage/profile.json
+      RESUME_STORAGE_PATH: /storage/resumes
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -22,6 +24,7 @@ services:
       start_period: 20s
     volumes:
       - ./backend:/app
+      - ./storage:/storage:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:

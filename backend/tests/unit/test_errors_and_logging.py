@@ -1,8 +1,10 @@
+import logging
+
 import pytest
 from pymongo.errors import ServerSelectionTimeoutError
 
 from app.core.errors import DependencyUnavailableError, error_body, raise_for_database
-from app.core.logging import redact
+from app.core.logging import configure_logging, redact
 
 
 def test_database_errors_do_not_expose_the_driver_message():
@@ -16,6 +18,12 @@ def test_database_errors_do_not_expose_the_driver_message():
         "correlation_id": "cid-1",
         "details": {},
     }
+
+
+def test_http_client_request_logs_stay_below_info():
+    configure_logging("INFO")
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
 
 
 def test_log_redaction_hides_secret_fields_only():

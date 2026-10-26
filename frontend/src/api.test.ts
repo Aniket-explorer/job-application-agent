@@ -52,6 +52,7 @@ describe('loadWorkspace', () => {
         if (url.endsWith('/api/v1/applications?page_size=100')) return jsonResponse({ items: [{ id: 'app-1' }], total: 1, page: 1, page_size: 100 });
         if (url.endsWith('/api/v1/sources')) return jsonResponse([{ source: 'gmail', configured: false }]);
         if (url.endsWith('/api/v1/automation/settings')) return jsonResponse(settings);
+        if (url.endsWith('/api/v1/profile/status')) return jsonResponse({ profile_present: false, warnings: ['profile_missing'], message: 'No profile file was found.' });
         return jsonResponse({ message: 'missing' }, 404);
       }),
     );
@@ -61,6 +62,7 @@ describe('loadWorkspace', () => {
       applications: [{ id: 'app-1' }],
       connectors: [{ source: 'gmail', configured: false }],
       settings,
+      profile: { profile_present: false, warnings: ['profile_missing'], message: 'No profile file was found.' },
     });
   });
 });
