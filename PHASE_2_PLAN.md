@@ -93,7 +93,7 @@ Sync history is a `sync_runs` document per attempt. `source_integrations.career_
 
 Idempotency:
 
-- `source_job_id` is `greenhouse:{board_token}:{job_id}`.
+- `source_job_id` is `greenhouse:sha256:{digest}:{job_id}`, where `digest` is the SHA-256 hex of the stripped board token. The raw token is not stored or returned.
 - The existing unique index on `(source, source_job_id)` makes a repeat sync update `last_seen_at`, `updated_at`, and changed content instead of inserting a second job.
 - The same `canonical_url` updates that same job.
 - Same company, title, and location on this source only is a probable duplicate and is linked, not merged, when the source ids differ.
@@ -114,7 +114,7 @@ Existing collections and the three manual smoke jobs stay. New fields are option
 |---|---|
 | `origin` | `manual` or `discovered`. Missing on old rows; API treats missing plus `source=manual` as manual |
 | `provider` | `greenhouse` for discovered rows |
-| `board_token` | public slug, not a secret |
+| `board_digest` | SHA-256 of the public board slug; the raw slug is not stored |
 | `company_normalized`, `title_normalized`, `location_normalized` | lowercase trimmed dedup keys |
 | `required_skills`, `preferred_skills` | only strings found in the posting |
 | `experience_min`, `experience_max` | years, or null when the posting does not state them |
@@ -222,7 +222,7 @@ The Jobs page shows the total, the five factors, the matched skills, and the mis
 - A manual `POST .../sync` is allowed while `global_pause` is true because you asked for it. It still takes the same lock and the same rate limit. It cannot set `automation_enabled`.
 - Overlap: Redis `SET lock:discovery:career_page {token} NX PX 900000`. The holder refreshes the lock while the run is alive. Release is compare-and-delete. A second manual or scheduled run gets `409` / `skipped` and does not call Greenhouse.
 - Per run: at most 25 boards, one HTTP request per board, at least 2 seconds between boards.
-- Per board: at most one list request per 60 minutes, tracked by `next_allowed_run_at` and a Redis counter `ratelimit:greenhouse:{board}:{hour}`.
+- Per board: at most one list request per 60 minutes, tracked by Redis key `ratelimit:greenhouse:sha256:{digest}`. The key does not contain the raw board token.
 - The worker process is the only process that performs the HTTP calls. The API process enqueues the Celery task and returns `202`. In tests, a synchronous executor replaces Celery so the suite does not need a running worker.
 
 `prepare_application` is unchanged and still returns submitted false.

@@ -8,6 +8,7 @@ from app.connectors.career_page.greenhouse import (
     BoardConfig,
     BoardError,
     GreenhouseClient,
+    greenhouse_rate_limit_key,
     normalize_greenhouse_job,
     parse_greenhouse_boards,
     select_boards,
@@ -82,7 +83,7 @@ class GreenhouseRateLimiter:
                 now = self._clock()
         self._last_at = now
         redis = self._redis if self._redis is not None else get_redis()
-        stored = await redis.set(f"ratelimit:greenhouse:{token}", "1", nx=True, ex=self._window_seconds)
+        stored = await redis.set(greenhouse_rate_limit_key(token), "1", nx=True, ex=self._window_seconds)
         return bool(stored)
 
 
@@ -140,6 +141,9 @@ async def sync_greenhouse_boards(
 
     result = SyncResult(status="completed", boards_dropped_by_cap=dropped)
     try:
+        migrator = getattr(repository, "migrate_legacy_greenhouse_ids", None)
+        if migrator is not None:
+            await migrator()
         async with httpx.AsyncClient(transport=transport, follow_redirects=False) as http:
             client = GreenhouseClient(http, max_retries=max_retries, sleep=sleep)
             for board in selected:

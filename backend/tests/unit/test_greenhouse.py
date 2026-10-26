@@ -1,17 +1,23 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 import httpx
 import pytest
 
+from app.api.serializers import serialize_job
 from app.connectors.career_page.greenhouse import (
     MAX_BOARDS_PER_SYNC,
     BoardConfig,
     ConnectorUnavailable,
+    board_digest,
     canonicalize_url,
+    greenhouse_rate_limit_key,
+    greenhouse_source_job_id,
     normalize_greenhouse_job,
     parse_greenhouse_boards,
 )
+from app.core.logging import configure_logging
 from app.connectors.stubs import CONNECTORS
 from app.core.config import settings
 from app.services.discovery import DiscoveryLock, GreenhouseRateLimiter, sync_greenhouse_boards, sync_summary
@@ -25,21 +31,25 @@ class MemoryJobs:
         self.docs = {}
 
     async def upsert_discovered(self, doc):
-        key = (doc["source"], doc["source_job_id"])
+        payload = dict(doc)
+        legacy = payload.pop("_legacy_source_job_id", None)
+        key = (payload["source"], payload["source_job_id"])
         existing = self.docs.get(key)
+        if existing is None and legacy:
+            existing = self.docs.get((payload["source"], legacy))
         if existing is None:
-            stored = dict(doc)
+            stored = dict(payload)
             self.docs[key] = stored
             return stored, "created"
         if existing.get("origin") == "manual" or existing.get("source") == "manual":
             return existing, "preserved"
         existing.update(
             {
-                "title": doc["title"],
-                "description": doc["description"],
-                "last_seen_at": doc["last_seen_at"],
-                "updated_at": doc["updated_at"],
-                "content_hash": doc["content_hash"],
+                "title": payload["title"],
+                "description": payload["description"],
+                "last_seen_at": payload["last_seen_at"],
+                "updated_at": payload["updated_at"],
+                "content_hash": payload["content_hash"],
             }
         )
         return existing, "updated"
@@ -98,14 +108,42 @@ def test_normalize_maps_documented_fields_and_leaves_gaps_empty():
         BOARD,
         seen_at=SEEN_AT,
     )
+    digest = board_digest("exampleboard")
     assert job["source"] == "career_page"
-    assert job["source_job_id"] == "greenhouse:exampleboard:127817"
+    assert job["source_job_id"] == greenhouse_source_job_id("exampleboard", "127817")
+    assert job["board_digest"] == digest
+    assert "board_token" not in job
+    assert "exampleboard" not in job["source_job_id"]
     assert job["origin"] == "discovered"
     assert job["company"] == "Example Company"
     assert job["title"] == "Backend Engineer"
     assert job["description"] == "Build APIs"
     assert job["location"] == "NYC"
-    assert job["canonical_url"] == "https://boards.greenhouse.io/exampleboard/jobs/127817?a=1&b=2"
+    assert job["canonical_url"] is None
+    kept = normalize_greenhouse_job(
+        {
+            "id": 127817,
+            "title": "exampleboard platform role",
+            "absolute_url": "https://careers.example.com/jobs/127817",
+            "content": "<p>The exampleboard team uses Python.</p>",
+        },
+        BOARD,
+        seen_at=SEEN_AT,
+    )
+    assert kept["title"] == "exampleboard platform role"
+    assert kept["description"] == "The exampleboard team uses Python."
+    assert kept["canonical_url"] == "https://careers.example.com/jobs/127817"
+    assert "exampleboard" not in kept["source_job_id"]
+    company_hosted = normalize_greenhouse_job(
+        {
+            "id": 127817,
+            "title": "Role",
+            "absolute_url": "https://careers.example.com/jobs?gh_jid=127817",
+        },
+        BOARD,
+        seen_at=SEEN_AT,
+    )
+    assert company_hosted["canonical_url"] == "https://careers.example.com/jobs?gh_jid=127817"
     assert job["posted_at"] == datetime(2016, 1, 14, 15, 55, 28, tzinfo=timezone.utc)
     assert job["first_seen_at"] == SEEN_AT
     assert job["last_seen_at"] == SEEN_AT
@@ -268,11 +306,17 @@ def test_board_cap_and_rate_limit_spacing():
     assert len(seen) == MAX_BOARDS_PER_SYNC
 
     clock = Clock()
-    limiter = GreenhouseRateLimiter(FakeRedis(), min_interval_seconds=2, clock=clock, sleep=clock.sleep)
+    redis = FakeRedis()
+    limiter = GreenhouseRateLimiter(redis, min_interval_seconds=2, clock=clock, sleep=clock.sleep)
     assert asyncio.run(limiter.reserve("exampleboard")) is True
     assert asyncio.run(limiter.reserve("otherboard")) is True
     assert clock.slept == [2.0]
     assert asyncio.run(limiter.reserve("exampleboard")) is False
+    assert set(redis.values) == {
+        greenhouse_rate_limit_key("exampleboard"),
+        greenhouse_rate_limit_key("otherboard"),
+    }
+    assert all("exampleboard" not in key and "otherboard" not in key for key in redis.values)
 
 
 def test_scorer_runs_only_for_discovered_rows_and_the_summary_hides_the_board_token():
@@ -325,6 +369,113 @@ def test_scorer_runs_only_for_discovered_rows_and_the_summary_hides_the_board_to
     assert scored == ["Imported"]
     assert "exampleboard" not in str(summary)
     assert jobs.docs[("career_page", "greenhouse:exampleboard:1")]["title"] == "Keep manual"
+
+
+def test_sync_logs_and_errors_omit_the_board_token():
+    configure_logging("DEBUG")
+    captured: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            captured.append(record.getMessage())
+
+    handler = Capture()
+    logging.getLogger().addHandler(handler)
+    token = "logsecretboard"
+
+    def failing(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("timed out talking to the board")
+
+    try:
+        result = asyncio.run(
+            _sync(
+                failing,
+                MemoryJobs(),
+                boards=[BoardConfig(token=token, company_name="Secret Co")],
+                max_retries=0,
+            )
+        )
+    finally:
+        logging.getLogger().removeHandler(handler)
+    assert result.boards[0].error_code == "timeout"
+    assert token not in str(sync_summary(result))
+    assert token not in "\n".join(captured)
+
+
+def test_unmigrated_job_response_hides_the_legacy_board_id_and_slug_url():
+    from bson import ObjectId
+
+    token = "exampleboard"
+    body = serialize_job(
+        {
+            "_id": ObjectId(),
+            "source": "career_page",
+            "source_job_id": f"greenhouse:{token}:15",
+            "company": "Example Company",
+            "title": f"Role mentioning {token}",
+            "description": f"Public posting text for {token}.",
+            "canonical_url": f"https://boards.greenhouse.io/{token}/jobs/15",
+            "status": "active",
+            "created_at": SEEN_AT,
+        }
+    )
+    assert body["source_job_id"] == greenhouse_source_job_id(token, "15")
+    assert token not in body["source_job_id"]
+    assert body["canonical_url"] is None
+    assert token in body["title"]
+    assert token in body["description"]
+
+
+def test_locked_sync_does_not_migrate_or_fetch():
+    class CountingJobs(MemoryJobs):
+        def __init__(self):
+            super().__init__()
+            self.migrated = 0
+
+        async def migrate_legacy_greenhouse_ids(self):
+            self.migrated += 1
+            return 0
+
+    jobs = CountingJobs()
+    redis = FakeRedis()
+    lock = DiscoveryLock(redis)
+    asyncio.run(lock.acquire())
+
+    def fail_if_called(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(request.url)
+
+    blocked = asyncio.run(
+        sync_greenhouse_boards(
+            enabled=True,
+            boards=[BOARD],
+            transport=httpx.MockTransport(fail_if_called),
+            jobs=jobs,
+            lock=lock,
+            rate_limiter=_AllowLimiter(),
+        )
+    )
+    assert blocked.status == "already_running"
+    assert jobs.migrated == 0
+
+
+def test_migration_failure_releases_the_sync_lock():
+    class BoomJobs(MemoryJobs):
+        async def migrate_legacy_greenhouse_ids(self):
+            raise RuntimeError("migration interrupted")
+
+    redis = FakeRedis()
+    with pytest.raises(RuntimeError, match="migration interrupted"):
+        asyncio.run(
+            sync_greenhouse_boards(
+                enabled=True,
+                boards=[BOARD],
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"jobs": []})),
+                jobs=BoomJobs(),
+                lock=DiscoveryLock(redis),
+                rate_limiter=_AllowLimiter(),
+            )
+        )
+    assert "lock:discovery:career_page" not in redis.values
 
 
 def test_lock_blocks_a_second_sync_and_releases():

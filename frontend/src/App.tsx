@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BriefcaseBusiness, ClipboardList, Settings as SettingsIcon, Radio, RefreshCw, ExternalLink, ShieldCheck } from 'lucide-react';
 import { api, loadWorkspace, type Job, type Application, type Connector, type AutomationSettings, type ProfileStatus } from './api';
-import { JobFeed } from './JobsPage';
+import { JobFeed, JobListingLink } from './JobsPage';
 import { SyncJobs } from './CareerPageSync';
 
 type Page = 'Overview' | 'Jobs' | 'Applications' | 'Connectors & Settings';
@@ -54,5 +54,5 @@ export default function App() {
   </div>;
 }
 function Metric({label,value,note}:{label:string;value:string|number;note:string}) { return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>; }
-function JobTable({jobs,threshold,onDryRun}:{jobs:Job[];threshold:number;onDryRun:(job:Job)=>void}) { if(!jobs.length) return <Empty title="No jobs yet" text="Use the API's manual import endpoint to add a test listing. Connectors are intentionally unconfigured."/>; return <div className="table-wrap"><table><thead><tr><th>Role / company</th><th>Source</th><th>Match</th><th>Status</th><th>Action</th></tr></thead><tbody>{jobs.map(j=><tr key={j.id}><td><b>{j.title}</b><small className="subline">{j.company} · {j.location || 'Location not specified'}</small>{j.canonical_url ? <a className="job-link" href={j.canonical_url} target="_blank" rel="noreferrer">Open listing <ExternalLink size={11}/></a> : null}</td><td>{j.source}</td><td><span className={`score ${(j.match_score||0)>=threshold?'good':'low'}`}>{j.match_score ?? 0}%</span></td><td><span className="pill green">{j.status}</span></td><td><button className="button small" disabled={(j.match_score||0)<threshold} onClick={()=>onDryRun(j)}>Prepare dry run</button></td></tr>)}</tbody></table></div>; }
+function JobTable({jobs,threshold,onDryRun}:{jobs:Job[];threshold:number;onDryRun:(job:Job)=>void}) { if(!jobs.length) return <Empty title="No jobs yet" text="Use the API's manual import endpoint to add a test listing. Connectors are intentionally unconfigured."/>; return <div className="table-wrap"><table><thead><tr><th>Role / company</th><th>Source</th><th>Match</th><th>Status</th><th>Action</th></tr></thead><tbody>{jobs.map(j=><tr key={j.id}><td><b>{j.title}</b><small className="subline">{j.company} · {j.location || 'Location not specified'}</small><JobListingLink job={j} /></td><td>{j.source}</td><td><span className={`score ${(j.match_score||0)>=threshold?'good':'low'}`}>{j.match_score ?? 0}%</span></td><td><span className="pill green">{j.status}</span></td><td><button className="button small" disabled={(j.match_score||0)<threshold} onClick={()=>onDryRun(j)}>Prepare dry run</button></td></tr>)}</tbody></table></div>; }
 function Empty({title,text}:{title:string;text:string}) { return <div className="empty"><BriefcaseBusiness size={25}/><b>{title}</b><p>{text}</p></div>; }

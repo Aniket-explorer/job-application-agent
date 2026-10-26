@@ -1,6 +1,7 @@
+import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 import type { Job, ProfileStatus } from './api';
-import { FACTOR_LABELS, arrangeJobs, explainableScore, isManualRecord, meetsMinimum } from './jobFeed';
+import { FACTOR_LABELS, arrangeJobs, explainableScore, isManualRecord, meetsMinimum, missingBoardLink } from './jobFeed';
 
 const WARNING_TEXT: Record<string, string> = {
   profile_missing: 'No profile file was found, so this job was not scored.',
@@ -131,9 +132,7 @@ function JobCard({
         <div>
           <b>{job.title}</b>
           <small className="subline">{job.company} · {job.location || 'Location not specified'}</small>
-          {job.canonical_url ? (
-            <a className="job-link" href={job.canonical_url} target="_blank" rel="noreferrer">Open listing</a>
-          ) : null}
+          <JobListingLink job={job} />
         </div>
         <div className="job-card-score">
           <span className={`score ${qualified ? 'good' : 'low'}`}>{score === null ? (importScore === null ? 'Not scored' : `${importScore}%`) : `${score}%`}</span>
@@ -169,6 +168,19 @@ function JobCard({
       </button>
     </article>
   );
+}
+
+export function JobListingLink({ job }: { job: Job }) {
+  if (job.canonical_url) {
+    return (
+      <a className="job-link" href={job.canonical_url} target="_blank" rel="noreferrer">
+        Open listing <ExternalLink size={11} />
+      </a>
+    );
+  }
+  const note = missingBoardLink(job);
+  if (!note) return null;
+  return <p className="job-link-note" data-missing-link>{note}</p>;
 }
 
 function warningText(warning: string): string {

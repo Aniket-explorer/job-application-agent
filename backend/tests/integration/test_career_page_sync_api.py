@@ -6,6 +6,7 @@ import pytest
 import redis
 from pymongo import MongoClient
 
+from app.connectors.career_page.greenhouse import greenhouse_rate_limit_key, greenhouse_source_job_id
 from app.core.config import settings
 from app.repositories.jobs import JobRepository
 from app.services.discovery import GreenhouseRateLimiter
@@ -105,13 +106,16 @@ def test_sync_imports_scores_and_repeats_without_duplicates(client, monkeypatch,
     assert discovered["assessment"]["total_score"] is not None
     assert discovered["assessment"]["meets_threshold"] is True
     assert CANARY not in str(listed)
+    assert TOKEN not in str(listed)
+    assert discovered["source_job_id"] == greenhouse_source_job_id(TOKEN, "9")
+    assert discovered["canonical_url"] is None
 
     manual_rows = client.get("/api/v1/jobs?origin=manual").json()
     assert manual_rows["total"] == 1
     assert manual_rows["items"][0]["id"] == manual["id"]
     assert manual_rows["items"][0]["description"].startswith("Backend software engineer")
     database = MongoClient(settings.mongodb_url)[settings.mongodb_database]
-    assert database.jobs.count_documents({"source_job_id": "greenhouse:fixtureboard:9"}) == 1
+    assert database.jobs.count_documents({"source_job_id": greenhouse_source_job_id(TOKEN, "9")}) == 1
     assert database.job_matches.count_documents({}) == 1
     assert database.applications.count_documents({}) == 0
     _assert_policy(client)
@@ -150,7 +154,7 @@ def test_one_board_failure_keeps_jobs_from_the_other_board(client, monkeypatch, 
     again = client.post("/api/v1/sources/career_page/sync")
     assert again.status_code == 200
     assert again.json()["jobs_created"] == 0
-    assert database.jobs.count_documents({"source_job_id": "greenhouse:fixtureboard:4", "status": "active"}) == 1
+    assert database.jobs.count_documents({"source_job_id": greenhouse_source_job_id(TOKEN, "4"), "status": "active"}) == 1
 
 
 def test_rate_limit_and_lock_make_no_extra_request(client, monkeypatch, tmp_path):
@@ -222,7 +226,7 @@ def test_rate_limited_board_does_not_block_an_eligible_board(client, monkeypatch
         )
 
     _enable(monkeypatch, tmp_path, f"{limited}|Held Co,{ready}|Ready Co", handler)
-    _redis().set(f"ratelimit:greenhouse:{limited}", "1", ex=3600)
+    _redis().set(greenhouse_rate_limit_key(limited), "1", ex=3600)
     response = client.post("/api/v1/sources/career_page/sync")
     assert response.status_code == 200
     body = response.json()
@@ -234,7 +238,8 @@ def test_rate_limited_board_does_not_block_an_eligible_board(client, monkeypatch
     assert limited not in response.text
     assert ready not in response.text
     database = MongoClient(settings.mongodb_url)[settings.mongodb_database]
-    assert database.jobs.count_documents({"source_job_id": f"greenhouse:{ready}:15", "origin": "discovered"}) == 1
+    assert database.jobs.count_documents({"source_job_id": greenhouse_source_job_id(ready, "15"), "origin": "discovered"}) == 1
+    assert all(ready not in key and limited not in key for key in _rate_limit_keys())
     _clear_rate_limit(limited, ready)
 
 
@@ -305,12 +310,92 @@ def test_sync_api_preserves_a_manual_job_with_the_same_source_id(client, monkeyp
     assert body["duplicates_skipped"] == 1
     assert body["matches_written"] == 0
     assert TOKEN not in response.text
-    assert database.jobs.count_documents({"source_job_id": source_job_id}) == 1
-    stored = database.jobs.find_one({"source_job_id": source_job_id})
+    assert database.jobs.count_documents({"source_job_id": source_job_id}) == 0
+    stored = database.jobs.find_one({"source_job_id": greenhouse_source_job_id(TOKEN, "42")})
     assert stored["origin"] == "manual"
     assert stored["title"] == "Do not overwrite"
     assert stored["description"] == "manual collision"
     assert stored["company"] == "Example Co"
+    assert TOKEN not in client.get("/api/v1/jobs").text
+
+
+def test_legacy_greenhouse_ids_are_rewritten_without_duplicates_or_token_leaks(client, monkeypatch, tmp_path):
+    seen_at = datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)
+    database = MongoClient(settings.mongodb_url)[settings.mongodb_database]
+    database.jobs.insert_many(
+        [
+            {
+                "source": "career_page",
+                "source_job_id": f"greenhouse:{TOKEN}:9",
+                "board_token": TOKEN,
+                "origin": "discovered",
+                "company": "Fixture Co",
+                "title": "Old title",
+                "description": "Python",
+                "canonical_url": f"https://boards.greenhouse.io/{TOKEN}/jobs/9",
+                "status": "active",
+                "created_at": seen_at,
+                "updated_at": seen_at,
+            },
+            {
+                "source": "career_page",
+                "source_job_id": f"greenhouse:{TOKEN}:77",
+                "board_token": TOKEN,
+                "origin": "discovered",
+                "company": "Fixture Co",
+                "title": "Kept while absent",
+                "description": "Still stored",
+                "canonical_url": f"https://boards.greenhouse.io/{TOKEN}/jobs/77?for={TOKEN}",
+                "status": "active",
+                "created_at": seen_at,
+                "updated_at": seen_at,
+            },
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "jobs": [
+                    {
+                        "id": 9,
+                        "title": "Updated title",
+                        "content": "<p>Requirements: Python.</p>",
+                        "absolute_url": f"https://boards.greenhouse.io/{TOKEN}/jobs/9",
+                        "location": {"name": "Remote"},
+                    }
+                ]
+            },
+        )
+
+    _enable(monkeypatch, tmp_path, f"{TOKEN}|Fixture Co", handler)
+    first = client.post("/api/v1/sources/career_page/sync")
+    assert first.status_code == 200
+    assert first.json()["jobs_created"] == 0
+    assert first.json()["jobs_updated"] == 1
+    assert TOKEN not in first.text
+    assert database.jobs.count_documents({"source": "career_page"}) == 2
+    updated = database.jobs.find_one({"source_job_id": greenhouse_source_job_id(TOKEN, "9")})
+    assert updated["title"] == "Updated title"
+    assert updated.get("board_token") is None
+    assert updated["canonical_url"] is None
+    absent = database.jobs.find_one({"source_job_id": greenhouse_source_job_id(TOKEN, "77")})
+    assert absent["title"] == "Kept while absent"
+    assert absent.get("board_token") is None
+    assert absent["canonical_url"] is None
+    assert database.jobs.count_documents({"source_job_id": f"greenhouse:{TOKEN}:9"}) == 0
+    assert TOKEN not in client.get("/api/v1/jobs").text
+    assert _rate_limit_keys()
+    assert all(TOKEN not in key for key in _rate_limit_keys())
+
+    _clear_rate_limit(TOKEN)
+    second = client.post("/api/v1/sources/career_page/sync")
+    assert second.status_code == 200
+    assert second.json()["jobs_created"] == 0
+    assert second.json()["jobs_updated"] == 1
+    assert database.jobs.count_documents({"source": "career_page"}) == 2
+    assert TOKEN not in second.text
 
 
 def test_sync_assessment_uses_the_stored_minimum_score(client, monkeypatch, tmp_path):
@@ -406,7 +491,15 @@ def _replace_handler(monkeypatch, handler) -> None:
 
 def _clear_rate_limit(*tokens: str) -> None:
     store = _redis()
-    store.delete("lock:discovery:career_page", *(f"ratelimit:greenhouse:{token}" for token in tokens))
+    store.delete(
+        "lock:discovery:career_page",
+        *(f"ratelimit:greenhouse:{token}" for token in tokens),
+        *(greenhouse_rate_limit_key(token) for token in tokens),
+    )
+
+
+def _rate_limit_keys() -> list[str]:
+    return [key.decode() if isinstance(key, bytes) else key for key in _redis().scan_iter("ratelimit:greenhouse:*")]
 
 
 def _redis():

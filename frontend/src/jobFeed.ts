@@ -8,6 +8,14 @@ export const FACTOR_LABELS: Record<string, string> = {
   location: 'Location',
 };
 
+export const PROTECTED_BOARD_LINK =
+  'External job link is unavailable because it contains a protected board identifier.';
+
+export function missingBoardLink(job: Job): string | null {
+  if (job.canonical_url || isManualRecord(job)) return null;
+  return PROTECTED_BOARD_LINK;
+}
+
 export function isManualRecord(job: Job): boolean {
   if (job.origin === 'manual' || job.origin === 'discovered') return job.origin === 'manual';
   return job.source === 'manual';

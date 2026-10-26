@@ -36,6 +36,75 @@ class BoardConfig:
     company_name: str
 
 
+def board_digest(token: str) -> str:
+    """Full SHA-256 hex of the stripped board token. Case stays as configured.
+
+    The digest is not truncated. Two different tokens would have to share a SHA-256
+    hash before the unique `(source, source_job_id)` index could merge their jobs.
+    """
+    return hashlib.sha256(token.strip().encode("utf-8")).hexdigest()
+
+
+def greenhouse_source_job_id(token: str, job_id: str) -> str:
+    return f"greenhouse:sha256:{board_digest(token)}:{job_id}"
+
+
+def legacy_greenhouse_source_job_id(token: str, job_id: str) -> str:
+    return f"greenhouse:{token}:{job_id}"
+
+
+def greenhouse_rate_limit_key(token: str) -> str:
+    return f"ratelimit:greenhouse:sha256:{board_digest(token)}"
+
+
+_NEW_SOURCE_JOB_ID = re.compile(r"^greenhouse:sha256:[0-9a-f]{64}:.+$")
+
+
+def split_legacy_greenhouse_source_job_id(source_job_id: str) -> tuple[str, str] | None:
+    """Return `(token, job_id)` for `greenhouse:{token}:{job_id}` rows written before hashing."""
+    if _NEW_SOURCE_JOB_ID.fullmatch(source_job_id):
+        return None
+    if not source_job_id.startswith("greenhouse:"):
+        return None
+    token, separator, job_id = source_job_id.removeprefix("greenhouse:").partition(":")
+    if separator != ":" or not job_id or BOARD_TOKEN_RE.fullmatch(token) is None:
+        return None
+    return token, job_id
+
+
+def url_embeds_board_token(value: str, token: str) -> bool:
+    """True when the board slug is its own host label, path segment, or query value."""
+    parts = urlsplit(value)
+    if parts.hostname and token in parts.hostname.split("."):
+        return True
+    if token in parts.path.split("/"):
+        return True
+    return any(key == token or item == token for key, item in parse_qsl(parts.query, keep_blank_values=True))
+
+
+def publishable_canonical_url(value: str | None, token: str) -> str | None:
+    """Keep a job link that does not contain the board slug.
+
+    The Job Board list response documents `absolute_url`. Its sample is
+    `https://boards.greenhouse.io/{board_token}/jobs/{id}`, which includes the slug.
+    The list payload has no other job URL. A company-hosted `absolute_url` is kept
+    only when Greenhouse returns one and it does not contain the slug. This function
+    does not build a `gh_jid` link or any other URL.
+    """
+    if not isinstance(value, str) or not value or url_embeds_board_token(value, token):
+        return None
+    return value
+
+
+def public_source_job_id(source_job_id: str) -> str:
+    """Return the hashed id for an old `greenhouse:{token}:{id}` value."""
+    parsed = split_legacy_greenhouse_source_job_id(source_job_id)
+    if parsed is None:
+        return source_job_id
+    token, job_id = parsed
+    return greenhouse_source_job_id(token, job_id)
+
+
 def parse_greenhouse_boards(raw: str) -> list[BoardConfig]:
     """Parse `token|Company Name` pairs. Invalid pairs are dropped, not guessed."""
     boards: list[BoardConfig] = []
@@ -75,13 +144,14 @@ def normalize_greenhouse_job(raw: Any, board: BoardConfig, *, seen_at: datetime)
     description = _description(raw.get("content"))
     location = _location_name(raw.get("location"))
     posted_at = _posted_at(raw)
-    canonical_url = canonicalize_url(raw.get("absolute_url"))
+    canonical_url = publishable_canonical_url(canonicalize_url(raw.get("absolute_url")), board.token)
     description_hash = hashlib.sha256((description or "").encode("utf-8")).hexdigest()
     return {
         "source": "career_page",
-        "source_job_id": f"greenhouse:{board.token}:{job_id}",
+        "source_job_id": greenhouse_source_job_id(board.token, job_id),
+        "_legacy_source_job_id": legacy_greenhouse_source_job_id(board.token, job_id),
         "provider": "greenhouse",
-        "board_token": board.token,
+        "board_digest": board_digest(board.token),
         "origin": "discovered",
         "company": board.company_name,
         "company_normalized": board.company_name.casefold(),

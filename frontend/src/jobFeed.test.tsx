@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job, MatchAssessment, ProfileStatus } from './api';
 import { JobFeed } from './JobsPage';
-import { arrangeJobs, explainableScore, isManualRecord, meetsMinimum } from './jobFeed';
+import { arrangeJobs, explainableScore, isManualRecord, meetsMinimum, missingBoardLink, PROTECTED_BOARD_LINK } from './jobFeed';
 
 const assessment = (total: number | null, overrides: Partial<MatchAssessment> = {}): MatchAssessment => ({
   total_score: total,
@@ -151,6 +151,39 @@ describe('JobFeed display', () => {
     });
     expect(view.textContent).toContain('Drop role');
     expect(view.textContent).toContain('49.9%');
+  });
+
+  it('explains a missing discovered link and keeps a slug-free listing clickable', async () => {
+    const view = await render([
+      job({
+        id: 'hidden',
+        title: 'Hidden link role',
+        origin: 'discovered',
+        source: 'career_page',
+        canonical_url: null,
+        assessment: assessment(80),
+      }),
+      job({
+        id: 'safe',
+        title: 'Safe link role',
+        origin: 'discovered',
+        source: 'career_page',
+        canonical_url: 'https://careers.example.com/jobs/9?gh_jid=9',
+        assessment: assessment(80),
+      }),
+      job({ id: 'manual-no-link', title: 'Manual without link', canonical_url: null }),
+    ]);
+    const hidden = view.querySelector('[data-job-id="hidden"]');
+    const safe = view.querySelector('[data-job-id="safe"]');
+    const manual = view.querySelector('[data-job-id="manual-no-link"]');
+    expect(hidden?.querySelector('[data-missing-link]')?.textContent).toBe(PROTECTED_BOARD_LINK);
+    expect(hidden?.querySelector('a')).toBeNull();
+    expect(hidden?.textContent).not.toContain('boards.greenhouse.io');
+    expect(safe?.querySelector('a')?.getAttribute('href')).toBe('https://careers.example.com/jobs/9?gh_jid=9');
+    expect(safe?.querySelector('[data-missing-link]')).toBeNull();
+    expect(manual?.querySelector('[data-missing-link]')).toBeNull();
+    expect(manual?.querySelector('a')).toBeNull();
+    expect(missingBoardLink(job({ origin: 'discovered', source: 'career_page', canonical_url: null }))).toBe(PROTECTED_BOARD_LINK);
   });
 
   it('shows a message when the profile file is missing', async () => {

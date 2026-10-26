@@ -44,7 +44,7 @@ Update this table whenever a function, endpoint, task, connector, or page is add
 | Liveness | `GET /health`, `GET /api/v1/health` | app/main.py, api/v1/routes/health.py | integration, smoke | legacy health includes Mongo and dry_run |
 | Readiness | `GET /api/v1/ready` | api/v1/routes/health.py | integration/test_v1_api.py, smoke | Mongo + Redis, 503 when either is down |
 | Connector status | `GET /api/v1/sources`, `GET /api/connectors` | services/sources.py | unit/test_connectors.py, integration, smoke | four sources unconfigured; career_page is Greenhouse list-only and disabled unless configured |
-| Greenhouse job list | `CareerPageConnector`, `sync_greenhouse_boards()` | connectors/career_page, services/discovery.py | unit/test_greenhouse.py, integration/test_greenhouse_sync.py | fixture tests only; Beat does not call it; no apply endpoint |
+| Greenhouse job list | `CareerPageConnector`, `sync_greenhouse_boards()` | connectors/career_page, services/discovery.py | unit/test_greenhouse.py, integration/test_greenhouse_sync.py | fixture tests only; board ids and rate-limit keys use a SHA-256 digest; Beat does not call it; no apply endpoint |
 | Manual Greenhouse sync | `POST /api/v1/sources/career_page/sync` | api/v1/routes/sources.py, services/discovery.py | integration/test_career_page_sync_api.py, unit/test_greenhouse.py, unit/test_task_safety.py | disabled and empty boards return 422 with no HTTP call; scores discovered rows with the existing scorer |
 | Manual job import + score | `POST /api/v1/jobs/import`, `POST /api/jobs/import` | services/jobs.py | integration, smoke | same records on both routes |
 | Job list / detail | `GET /api/v1/jobs`, `GET /api/jobs/{id}` | services/jobs.py | integration | v1 returns a page envelope |
@@ -56,7 +56,7 @@ Update this table whenever a function, endpoint, task, connector, or page is add
 | Profile and resume status | `GET /api/v1/profile/status` | scoring/profile.py | unit/test_profile.py, integration/test_scoring_api.py | read-only; PDF text via pypdf; missing files are reported and not invented |
 | Job match storage | `job_matches` | repositories/matches.py | integration/test_scoring_api.py | unique on candidate, job, and matching version |
 | Hourly scan placeholder | Celery `app.tasks.hourly_scan` | app/tasks.py | unit/test_task_safety.py | no external calls |
-| Dashboard (4 views) | `/` | frontend/src/App.tsx, JobsPage.tsx, CareerPageSync.tsx, api.ts | src/api.test.ts, src/jobFeed.test.tsx, src/syncJobs.test.tsx | Jobs page separates manual test records from discovered listings. Connectors page confirms before a manual Greenhouse sync |
+| Dashboard (4 views) | `/` | frontend/src/App.tsx, JobsPage.tsx, CareerPageSync.tsx, api.ts | src/api.test.ts, src/jobFeed.test.tsx, src/syncJobs.test.tsx | Jobs page separates manual test records from discovered listings and explains when a Greenhouse link is hidden. Connectors page confirms before a manual Greenhouse sync |
 
 ## Conventions
 - Layers: routes -> services -> repositories/connectors. No DB or external calls in routes.
@@ -76,6 +76,8 @@ Update this table whenever a function, endpoint, task, connector, or page is add
 - Legacy `/api/*` routes remain and share the PyMongo repositories with `/api/v1`.
 
 ## Change log
+- 2026-10-26 Discovered jobs with no slug-free Greenhouse URL keep `canonical_url` null. The Jobs page explains that the external link is unavailable because it contains a protected board identifier.
+- 2026-10-26 Greenhouse board tokens are stored as SHA-256 digests in `source_job_id` and Redis rate-limit keys. Legacy ids are rewritten in place, keeping the job `_id`. A Greenhouse URL that contains the board slug is omitted rather than replaced with an unusable link.
 - 2026-10-26 Phase 2 milestone 4: Connectors page Sync jobs button calls the manual career-page sync route after confirmation, shows the safe summary, and refreshes the job list. It does not run on page load or change connector settings.
 - 2026-10-26 Phase 2 milestone 3 tests: mixed-board rate limit, lock release after a board-loop exception, manual source-id collision, and a non-default stored threshold. httpx request logs stay at WARNING so board tokens in request URLs are not written.
 - 2026-10-26 Phase 2 milestone 3: manual `POST /api/v1/sources/career_page/sync` imports Greenhouse list fixtures, updates existing discovered rows, and scores them with the existing explainable scorer. Disabled or empty board configuration makes no external request. Beat is unchanged.
