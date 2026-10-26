@@ -36,6 +36,8 @@ Exit: backend starts, `/ready` reports Mongo and Redis ok. Matching redesign, SS
 
 Exit: a manually imported job is scored and returned with its breakdown.
 
+Milestone 1 of the approved `PHASE_2_PLAN.md` is the Greenhouse list connector. Milestone 2 stores explainable scores in `job_matches` and shows them on the Jobs page. Unknown factors are excluded instead of scored as 50. Milestone 3 adds a manual `POST /api/v1/sources/career_page/sync`. Milestone 4 adds a confirmed Sync jobs button on the Connectors page. The checklist above is still open. Beat does not call Greenhouse.
+
 ## Phase 3 - Connector framework
 - [ ] `Capability`, `CapabilityStatus`, `JobSourceConnector`, `ApplicationChannel`
 - [ ] Connector registry; packages for linkedin, naukri, wellfound, career_pages, gmail (unconfigured/unverified)
@@ -101,7 +103,7 @@ Nothing below is assumed. Each row must be checked against the provider's curren
 | LinkedIn | Job alert emails via Gmail; user-provided job URLs | No public apply API for individuals is known; treat as `manual` channel unless verified otherwise | Job alerts enabled on your account | To verify |
 | Naukri | Job alert emails via Gmail; user-provided URLs | Not assumed; `manual` until verified | Job alerts enabled | To verify |
 | Wellfound | Job alert emails via Gmail; user-provided URLs | Not assumed; `manual` until verified | Job alerts enabled | To verify |
-| Company career pages | Public ATS job-board APIs (for example Greenhouse and Lever job boards) and JSON-LD `JobPosting` on public pages | Per site; only where a documented, permitted application method exists | List of target companies | To verify |
+| Company career pages | Greenhouse Job Board API `GET /v1/boards/{token}/jobs?content=true` (public, no key). Lever and Ashby later. No HTML crawling | Not implemented. The Greenhouse apply POST is not called | `ENABLE_CAREER_PAGE_CONNECTOR` and `GREENHOUSE_BOARDS` in `.env` | List read implemented, disabled by default, not scheduled |
 | Gmail | Gmail API, `gmail.readonly` | `gmail.send` in Phase 8 | Google Cloud project, OAuth consent screen, OAuth client (Desktop/Web) | To configure |
 
 ## CI/CD stages (no manual testing)

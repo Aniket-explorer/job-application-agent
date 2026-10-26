@@ -1,21 +1,34 @@
-def serialize_job(doc: dict) -> dict:
-    return {
+def job_origin(doc: dict) -> str:
+    origin = doc.get("origin")
+    if origin in {"manual", "discovered"}:
+        return origin
+    if doc.get("source") == "manual":
+        return "manual"
+    return "discovered"
+
+
+def serialize_job(doc: dict, assessment: dict | None = None) -> dict:
+    body = {
         "id": str(doc["_id"]),
         "source": doc["source"],
         "source_job_id": doc["source_job_id"],
         "company": doc["company"],
         "title": doc["title"],
         "location": doc.get("location"),
-        "description": doc["description"],
-        "canonical_url": doc["canonical_url"],
+        "description": doc.get("description"),
+        "canonical_url": doc.get("canonical_url"),
         "match_score": doc.get("match_score"),
+        "origin": job_origin(doc),
         "status": doc.get("status", "active"),
         "created_at": doc["created_at"],
     }
+    if assessment is not None:
+        body["assessment"] = assessment
+    return body
 
 
-def serialize_job_detail(doc: dict) -> dict:
-    result = serialize_job(doc)
+def serialize_job_detail(doc: dict, assessment: dict | None = None) -> dict:
+    result = serialize_job(doc, assessment)
     result["match_factors"] = doc.get("match_factors", {})
     result["match_reasons"] = doc.get("match_reasons", [])
     return result

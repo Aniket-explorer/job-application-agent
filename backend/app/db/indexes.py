@@ -12,3 +12,7 @@ async def ensure_indexes() -> None:
     await db.applications.create_index([("status", 1), ("created_at", -1)])
     await db.audit_events.create_index([("entity_id", 1), ("created_at", -1)])
     await db.audit_events.create_index("created_at")
+    await db.job_matches.create_index(
+        [("candidate_id", 1), ("job_id", 1), ("matching_version", 1)],
+        unique=True,
+    )

@@ -149,13 +149,13 @@ match_score = sum(factor_score * weight) / 100
 weights = {technical_skills: 30, role_responsibility: 25, experience: 20,
            domain_relevance: 15, location: 10}
 ```
-- `technical_skills`: required skills found in profile count 2x versus preferred; synonyms from a versioned dictionary. Job with no extracted skills -> 50 (neutral, flagged "insufficient data").
-- `role_responsibility`: overlap of normalized title and responsibility keywords with `preferred_roles` and work-experience titles.
-- `experience`: 100 inside `[experience_min, experience_max]`, linear decay 25 per year outside; unknown -> 50.
-- `domain_relevance`: overlap of job domain keywords with project and experience domains.
-- `location`: 100 if remote and remote is accepted, or location is in `preferred_locations`; 0 if work arrangement is explicitly excluded; unknown -> 50.
-- Each factor score is clamped to [0, 100] and rounded to 1 decimal. `matching_version` is stored.
-- Threshold check: `total_score >= threshold` (so 49.9 fails and 50.0 passes).
+- `technical_skills`: required skills found in the profile or resume count 2x versus preferred; synonyms from a versioned dictionary map only to that dictionary skill.
+- `role`: overlap of the job title with `preferred_roles` and work-experience titles. No overlap is 0. No role facts leaves the factor unknown.
+- `experience`: 100 inside a stated year range, then 25 points off per year outside, floored at 0. Years come from profile dates and from phrases in the job text.
+- `domain`: overlap of project and experience domains with words in the posting. A stated profile domain that does not appear is a mismatch of 0.
+- `location`: 100 when the arrangement or place matches a preference; 0 when the arrangement is excluded or a stated place does not match. Missing location facts leave the factor unknown.
+- Each known factor score is clamped to [0, 100] and rounded to 1 decimal. `matching_version` is `phase2-v1`.
+- Unknown factors have `score=null`, are excluded from the average, and add a warning. The weights of the known factors are renormalized. A missing total fails the threshold. A stored total passes only when `total_score >= threshold` (49.9 fails and 50.0 passes). The threshold is the persisted `minimum_match_score`, default 50.
 
 ### 4.4 Hard exclusions (any one blocks)
 `job_closed`, `duplicate_application`, `mandatory_requirement_unmet`, `channel_unsupported`, `channel_prohibited`, `unverified_declaration_required`, `required_information_missing`, `resume_integrity_failed`.

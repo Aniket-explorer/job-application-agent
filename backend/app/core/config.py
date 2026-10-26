@@ -19,12 +19,15 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     app_secret_key: str = "dummy-change-me-to-a-long-random-value"
     gmail_client_id: str = ""
     gmail_client_secret: str = ""
     gmail_redirect_uri: str = ""
     resume_storage_path: str = "./storage/resumes"
+    profile_path: str = "./storage/profile.json"
+    enable_career_page_connector: bool = False
+    greenhouse_boards: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
 
     @field_validator("mongodb_url")

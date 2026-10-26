@@ -4,12 +4,12 @@
 
 A personal, local-first assistant that discovers jobs, scores them against your verified profile, prepares applications with your **original resume**, and tracks replies and follow-ups. It runs on your own laptop with Docker Desktop.
 
-**Status:** Phase 1 complete (versioned API, MongoDB repositories, persisted settings). The dashboard reads `/api/v1`. Discovery connectors are still unconfigured, and applications are dry-run only. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
+**Status:** Phase 1 is complete. Phase 2 milestone 1 adds a disabled-by-default Greenhouse job-list connector. Milestone 2 scores stored jobs against a local profile. Milestone 3 adds `POST /api/v1/sources/career_page/sync`. Milestone 4 adds a confirmed Sync jobs button on the Connectors page. The connector stays off unless you enable it, and the hourly scheduler does not call it. Applications are dry-run only. See [PHASE_2_PLAN.md](PHASE_2_PLAN.md).
 
 ## Safety
 
 - **Dry-run is the default.** Nothing is submitted and no email is sent. Live submission stays off until a channel is implemented, tested, and explicitly enabled.
-- LinkedIn, Naukri, Wellfound, company career pages, and Gmail are connectors that report `not_configured` until their access is verified. They do not scrape, log in, bypass CAPTCHAs, or submit forms.
+- LinkedIn, Naukri, Wellfound, and Gmail stay unconfigured. The career-page connector can read the public Greenhouse job list only after you set `ENABLE_CAREER_PAGE_CONNECTOR` and `GREENHOUSE_BOARDS` in `.env`, and only when you call `POST /api/v1/sources/career_page/sync`. The hourly scheduler does not call it. No connector submits applications.
 - This is a **public** repository. Only dummy placeholder credentials are committed. Your real keys go in `.env` / `secrets/`, your resume and profile in `storage/`; all are gitignored.
 
 ## Design docs
@@ -39,9 +39,19 @@ Copy-Item .env.example .env      # then replace dummy-* values locally if needed
 docker compose up --build
 ```
 
-- Dashboard: http://localhost:5173
+- Dashboard: http://localhost:5173 or http://127.0.0.1:5173
 - API docs: http://localhost:8000/docs
 - Health: http://localhost:8000/health
+
+## Profile and original resume
+
+Scoring reads two gitignored files. It does not create a sample profile, and it does not modify the resume.
+
+1. Create `storage/profile.json` at the repository root. Put only facts you can confirm: `skills` (`name`, optional `years`), `preferred_roles`, `work_experience` (`title`, `start`, `end`, optional `domain`), `projects`, `preferred_locations`, `work_arrangement_preferences`, `excluded_arrangements`, and `resume_filename`. Leave out anything you have not confirmed. `name`, `email`, and `phone` are ignored and are not returned by the API.
+2. Put the original resume in `storage/resumes/`. `resume_filename` is that file's name only, for example `resume.pdf`. PDF, `.txt`, and `.md` can be read. PDF text is extracted in memory with `pypdf`; the file is not rewritten.
+3. Docker Compose mounts `storage/` read-only at `/storage` and sets `PROFILE_PATH=/storage/profile.json` and `RESUME_STORAGE_PATH=/storage/resumes`. You do not need to change those two values for Compose. A process you start yourself from `backend/` should keep the `../storage/...` paths in `.env`.
+
+`GET /api/v1/profile/status` reports a missing or unreadable profile or resume. Until the profile file exists, jobs are not given assumed skills.
 
 Stop with `Ctrl+C` or `docker compose down` (add `-v` only to delete local data).
 
